@@ -1,39 +1,51 @@
-from fastapi import FastAPI, Depends, HTTPException
+from fastapi import FastAPI, HTTPException, Depends, Request
+from fastapi.responses import JSONResponse
 from fastapi_jwt_auth import AuthJWT
-from pydantic import BaseModel, Field
-
-"""
-set secret key to environment variable with this command
-export AUTHJWT_SECRET_KEY=secretkey, in terminal linux, macOS, Windows Bash
-run app with this command uvicorn basic:app --host 0.0.0.0
-if you install python-dotenv run this command below
-uvicorn basic:app --host 0.0.0.0 --port 5000 --env-file .env
-"""
+from fastapi_jwt_auth.exceptions import AuthJWTException
+from pydantic import BaseModel
 
 app = FastAPI()
 
 class User(BaseModel):
-    username: str = Field(...,min_length=1)
-    password: str = Field(...,min_length=1)
+    username: str
+    password: str
 
-# Provide a method to create access tokens. The create_access_token()
-# function is used to actually generate the token, and you can return
-# it to the caller however you choose.
-@app.post('/login',status_code=200)
+# in production you can use Settings management
+# from pydantic to get secret key from .env
+class Settings(BaseModel):
+    authjwt_secret_key: str = "secret"
+
+# callback to get your configuration
+@AuthJWT.load_config
+def get_config():
+    return Settings()
+
+# exception handler for authjwt
+# in production, you can tweak performance using orjson response
+@app.exception_handler(AuthJWTException)
+def authjwt_exception_handler(request: Request, exc: AuthJWTException):
+    return JSONResponse(
+        status_code=exc.status_code,
+        content={"detail": exc.message}
+    )
+
+# provide a method to create access tokens. The create_access_token()
+# function is used to actually generate the token to use authorization
+# later in endpoint protected
+@app.post('/login')
 def login(user: User, Authorize: AuthJWT = Depends()):
-    if user.username != 'test' or user.password != 'test':
-        raise HTTPException(status_code=401,detail='Bad username or password')
+    if user.username != "test" and user.password != "test":
+        raise HTTPException(status_code=401,detail="Bad username or password")
 
-    # identity must be between string or integer
-    access_token = Authorize.create_access_token(identity=user.username)
+    # subject identifier for who this token is for example id or username from database
+    access_token = Authorize.create_access_token(subject=user.username)
     return {"access_token": access_token}
 
-@app.get('/protected',status_code=200)
-def protected(Authorize: AuthJWT = Depends()):
-    # Protect an endpoint with jwt_required, which requires a valid access token
-    # in the request to access.
+# protect endpoint with function jwt_required(), which requires
+# a valid access token in the request headers to access.
+@app.get('/user')
+def user(Authorize: AuthJWT = Depends()):
     Authorize.jwt_required()
 
-    # Access the identity of the current user with get_jwt_identity
-    current_user = Authorize.get_jwt_identity()
-    return {"logged_in_as": current_user}
+    current_user = Authorize.get_jwt_subject()
+    return {"user": current_user}
