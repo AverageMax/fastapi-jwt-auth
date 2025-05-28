@@ -34,7 +34,7 @@ def authjwt_exception_handler(request: Request, exc: AuthJWTException):
 # later in endpoint protected
 @app.post('/login')
 def login(user: User, Authorize: AuthJWT = Depends()):
-    if user.username != "test" and user.password != "test":
+    if user.username != "test" or user.password != "test":
         raise HTTPException(status_code=401,detail="Bad username or password")
 
     # subject identifier for who this token is for example id or username from database
